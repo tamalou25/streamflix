@@ -81,6 +81,72 @@ app.get('/api/trending/:type/:window', async (req, res) => {
   }
 });
 
+// ----- NATIVE STREAM ENDPOINT (Consumet → FlixHQ → m3u8) -----
+// Cache stream URLs for 30 min (they expire fast on FlixHQ)
+const streamCache = new Map();
+const STREAM_TTL = 30 * 60 * 1000;
+
+function cacheKey(p) { return `${p.title}|${p.year}|${p.type}|${p.season || ''}|${p.episode || ''}`; }
+
+app.get('/api/stream', async (req, res) => {
+  const base = process.env.CONSUMET_BASE_URL;
+  if (!base) return res.status(503).json({ error: 'CONSUMET_BASE_URL not configured. Voir README pour deployer Consumet.' });
+
+  const { title, year, type = 'movie', season, episode } = req.query;
+  if (!title) return res.status(400).json({ error: 'title required' });
+
+  const key = cacheKey({ title, year, type, season, episode });
+  const cached = streamCache.get(key);
+  if (cached && Date.now() - cached.t < STREAM_TTL) {
+    return res.json(cached.data);
+  }
+
+  try {
+    // 1) Search
+    const searchUrl = `${base.replace(/\/$/, '')}/movies/flixhq/${encodeURIComponent(title)}`;
+    const searchRes = await fetch(searchUrl);
+    if (!searchRes.ok) throw new Error(`search: ${searchRes.status}`);
+    const search = await searchRes.json();
+
+    const wantType = type === 'tv' ? 'TV Series' : 'Movie';
+    const matches = (search.results || []).filter(x => x.type === wantType);
+    let best = matches.find(x => x.releaseDate?.includes(year)) || matches[0] || search.results?.[0];
+    if (!best) throw new Error('No FlixHQ match');
+
+    // 2) Info
+    const infoUrl = `${base.replace(/\/$/, '')}/movies/flixhq/info?id=${encodeURIComponent(best.id)}`;
+    const info = await (await fetch(infoUrl)).json();
+
+    // 3) Pick the right episode
+    let ep;
+    if (type === 'tv') {
+      ep = (info.episodes || []).find(e => e.season == season && e.number == episode);
+    } else {
+      ep = (info.episodes || [])[0];
+    }
+    if (!ep) throw new Error('Episode not found');
+
+    // 4) Watch — get streaming sources
+    const watchUrl = `${base.replace(/\/$/, '')}/movies/flixhq/watch?episodeId=${encodeURIComponent(ep.id)}&mediaId=${encodeURIComponent(info.id)}&server=upcloud`;
+    const stream = await (await fetch(watchUrl)).json();
+
+    const data = {
+      sources: (stream.sources || []).map(s => ({ url: s.url, quality: s.quality, isM3U8: s.isM3U8 })),
+      subtitles: (stream.subtitles || []).map(s => ({ url: s.url, lang: s.lang })),
+      headers: stream.headers || null,
+      title: best.title,
+      year: best.releaseDate
+    };
+
+    streamCache.set(key, { t: Date.now(), data });
+    res.setHeader('Cache-Control', 'public, max-age=600');
+    res.json(data);
+  } catch (err) {
+    console.error('Stream error:', err.message);
+    res.status(502).json({ error: err.message });
+  }
+});
+
 // SPA fallback – serve index.html for all other routes
 app.get('*', (req, res) => {
   res.sendFile(join(__dirname, 'index.html'));

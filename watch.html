@@ -7,6 +7,7 @@
   <meta name="theme-color" content="#e50914"/>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>"/>
   <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.13/dist/hls.min.js"></script>
   <script>
     tailwind.config = {
       theme: { extend: { colors: { brand: '#e50914' }, fontFamily: { sans: ['Inter','system-ui','sans-serif'] } } }
@@ -69,10 +70,30 @@
     @keyframes fbIn { from { opacity:0; transform:translateX(-50%) translateY(8px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
 
     /* Player loading ring */
-    .player-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; pointer-events: none; opacity: 1; transition: opacity .4s; z-index: 5; }
+    .player-loading { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #000; pointer-events: none; opacity: 1; transition: opacity .4s; z-index: 5; gap: .8rem; }
     .player-loading.gone { opacity: 0; pointer-events: none; }
+    .player-loading .status { font-size: .75rem; color: #888; }
     .spin { width: 36px; height: 36px; border: 3px solid #333; border-top-color: #e50914; border-radius: 50%; animation: spin .7s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Native HTML5 player */
+    .native-video { width: 100%; aspect-ratio: 16/9; display: none; background: #000; }
+    .native-video.show { display: block; }
+    #playerFrame.hidden { display: none; }
+
+    /* Mode tabs (Native HD / Iframe) */
+    .mode-tab { background: linear-gradient(135deg, #1a1a1a, #2a2a2a); border: 1.5px solid #444; color: #ccc; padding: .55rem 1.2rem; border-radius: .5rem; cursor: pointer; font-size: .8rem; font-weight: 700; transition: all .18s; display: flex; align-items: center; gap: .5rem; }
+    .mode-tab:hover { border-color: #e50914; color: #fff; }
+    .mode-tab.active { background: linear-gradient(135deg, #e50914, #b81d24); border-color: #e50914; color: #fff; box-shadow: 0 4px 14px rgba(229,9,20,.3); }
+    .mode-badge { font-size: .55rem; background: #46d369; color: #000; padding: .1rem .35rem; border-radius: .2rem; font-weight: 800; }
+
+    /* Quality picker */
+    .quality-pill { background: #2a2a2a; color: #ccc; border: 1px solid #444; padding: .25rem .65rem; border-radius: 1rem; font-size: .7rem; font-weight: 600; cursor: pointer; }
+    .quality-pill:hover { border-color: #e50914; color: #fff; }
+    .quality-pill.active { background: #e50914; border-color: #e50914; color: #fff; }
+
+    /* Ad slot */
+    .ad-slot { background: #0d0d0d; border: 1px dashed #333; border-radius: .5rem; padding: 1rem; text-align: center; color: #555; font-size: .7rem; min-height: 90px; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; }
 
     @media (max-width: 768px) {
       .ep-thumb { width: 70px; }
@@ -109,25 +130,53 @@
 
     <!-- Player -->
     <div class="player-wrap rounded-lg overflow-hidden mb-4 relative" id="playerWrap">
-      <div class="player-loading" id="playerLoading"><div class="spin"></div></div>
+      <div class="player-loading" id="playerLoading">
+        <div class="spin"></div>
+        <div class="status" id="loadingStatus">Chargement…</div>
+      </div>
       <iframe id="playerFrame" allowfullscreen allow="autoplay; fullscreen" src="about:blank" onload="onFrameLoad()"></iframe>
+      <video id="nativeVideo" class="native-video" controls playsinline crossorigin="anonymous"></video>
       <div class="fallback-banner hidden" id="fallbackBanner">
         <span>Ce serveur ne répond pas ?</span>
         <button onclick="nextSource()">Serveur suivant →</button>
       </div>
     </div>
 
-    <!-- Source selectors -->
+    <!-- Mode toggle -->
     <div class="bg-[#111] rounded-lg p-4 mb-4">
       <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
-        <p class="text-sm font-bold text-gray-300">🎬 Serveurs vidéo</p>
+        <p class="text-sm font-bold text-gray-300">🎬 Mode lecteur</p>
         <div class="flex gap-2" id="langTabs">
           <button class="lang-tab active" onclick="setLang(this,'vf')">VF</button>
           <button class="lang-tab" onclick="setLang(this,'vostfr')">VOSTFR</button>
           <button class="lang-tab" onclick="setLang(this,'vo')">VO</button>
         </div>
       </div>
-      <div class="flex flex-wrap gap-2" id="srcTabs"></div>
+      <div class="flex flex-wrap gap-2 mb-4">
+        <button class="mode-tab active" id="modeNative" onclick="setMode('native')">
+          ⚡ Lecteur HD natif <span class="mode-badge">SANS PUB</span>
+        </button>
+        <button class="mode-tab" id="modeIframe" onclick="setMode('iframe')">
+          📺 Serveurs iframe <span class="mode-badge" style="background:#888;color:#000">15 srv</span>
+        </button>
+      </div>
+
+      <!-- Quality picker (native mode) -->
+      <div id="qualityWrap" class="flex items-center gap-2 mb-3 hidden">
+        <span class="text-xs text-gray-400">Qualité :</span>
+        <div class="flex gap-1.5 flex-wrap" id="qualityPicker"></div>
+      </div>
+
+      <!-- Iframe servers (iframe mode) -->
+      <div id="srcTabsWrap" class="hidden">
+        <p class="text-xs text-gray-500 mb-2">Si un serveur ne marche pas, essaye le suivant :</p>
+        <div class="flex flex-wrap gap-2" id="srcTabs"></div>
+      </div>
+    </div>
+
+    <!-- Ad slot -->
+    <div class="ad-slot" id="adSlot1">
+      <span>📢 Espace publicitaire (728×90) — Configure ton script ad ici</span>
     </div>
 
     <!-- Season/Episodes (TV only) -->
@@ -175,16 +224,21 @@ const IMG_BASE = 'https://image.tmdb.org/t/p/';
 
 // url(tmdbId, imdbId, type, season, episode) — return null to skip this source
 const SOURCES = [
-  { name: 'VidSrc',      url: (id,imdb,t,s,e) => s ? `https://vidsrc.to/embed/${t}/${id}/${s}/${e}`                            : `https://vidsrc.to/embed/${t}/${id}` },
-  { name: 'VidSrc 2',    url: (id,imdb,t,s,e) => s ? `https://vidsrc.xyz/embed/${t}?tmdb=${id}&season=${s}&episode=${e}`       : `https://vidsrc.xyz/embed/${t}?tmdb=${id}` },
-  { name: 'VidSrc.me',   url: (id,imdb,t,s,e) => s ? `https://vidsrc.me/embed/${t}?tmdb=${id}&season=${s}&episode=${e}`        : `https://vidsrc.me/embed/${t}?tmdb=${id}` },
-  { name: 'SuperEmbed',  url: (id,imdb,t,s,e) => s ? `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${s}&e=${e}`             : `https://multiembed.mov/?video_id=${id}&tmdb=1` },
-  { name: 'EmbedSu',     url: (id,imdb,t,s,e) => s ? `https://embed.su/embed/${t}/${id}/${s}/${e}`                             : `https://embed.su/embed/${t}/${id}` },
-  { name: 'AutoEmbed',   url: (id,imdb,t,s,e) => s ? `https://autoembed.co/embed/${t}/${id}/${s}/${e}`                         : `https://autoembed.co/embed/${t}/${id}` },
-  { name: 'SmashyStream',url: (id,imdb,t,s,e) => s ? `https://embed.smashystream.com/playere.php?tmdb=${id}&season=${s}&episode=${e}` : `https://embed.smashystream.com/playere.php?tmdb=${id}` },
-  { name: '2Embed',      url: (id,imdb,t,s,e) => imdb ? (s ? `https://www.2embed.cc/embedtv/${imdb}&s=${s}&e=${e}`             : `https://www.2embed.cc/embed/${imdb}`) : null },
-  { name: 'MoviesAPI',   url: (id,imdb,t,s,e) => imdb ? (s ? `https://moviesapi.club/tv/${imdb}-${s}-${e}`                     : `https://moviesapi.club/movie/${imdb}`) : null },
-  { name: 'NontonFilm',  url: (id,imdb,t,s,e) => s ? `https://www.NontonFilm.fun/embed/tv?tmdb=${id}&season=${s}&episode=${e}` : `https://www.NontonFilm.fun/embed/movie?tmdb=${id}` },
+  { name: 'VidSrc',       url: (id,imdb,t,s,e) => s ? `https://vidsrc.to/embed/${t}/${id}/${s}/${e}`                            : `https://vidsrc.to/embed/${t}/${id}` },
+  { name: 'VidSrc 2',     url: (id,imdb,t,s,e) => s ? `https://vidsrc.xyz/embed/${t}?tmdb=${id}&season=${s}&episode=${e}`       : `https://vidsrc.xyz/embed/${t}?tmdb=${id}` },
+  { name: 'VidSrc.me',    url: (id,imdb,t,s,e) => s ? `https://vidsrc.me/embed/${t}?tmdb=${id}&season=${s}&episode=${e}`        : `https://vidsrc.me/embed/${t}?tmdb=${id}` },
+  { name: 'VidSrc.cc',    url: (id,imdb,t,s,e) => s ? `https://vidsrc.cc/v2/embed/${t}/${id}/${s}/${e}?autoPlay=false`          : `https://vidsrc.cc/v2/embed/${t}/${id}?autoPlay=false` },
+  { name: 'SuperEmbed',   url: (id,imdb,t,s,e) => s ? `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${s}&e=${e}`             : `https://multiembed.mov/?video_id=${id}&tmdb=1` },
+  { name: 'EmbedSu',      url: (id,imdb,t,s,e) => s ? `https://embed.su/embed/${t}/${id}/${s}/${e}`                             : `https://embed.su/embed/${t}/${id}` },
+  { name: 'AutoEmbed',    url: (id,imdb,t,s,e) => s ? `https://autoembed.co/embed/${t}/${id}/${s}/${e}`                         : `https://autoembed.co/embed/${t}/${id}` },
+  { name: 'SmashyStream', url: (id,imdb,t,s,e) => s ? `https://embed.smashystream.com/playere.php?tmdb=${id}&season=${s}&episode=${e}` : `https://embed.smashystream.com/playere.php?tmdb=${id}` },
+  { name: '2Embed',       url: (id,imdb,t,s,e) => imdb ? (s ? `https://www.2embed.cc/embedtv/${imdb}&s=${s}&e=${e}`             : `https://www.2embed.cc/embed/${imdb}`) : null },
+  { name: 'MoviesAPI',    url: (id,imdb,t,s,e) => imdb ? (s ? `https://moviesapi.club/tv/${imdb}-${s}-${e}`                     : `https://moviesapi.club/movie/${imdb}`) : null },
+  { name: '111Movies',    url: (id,imdb,t,s,e) => s ? `https://111movies.com/${t}/${id}/${s}/${e}`                              : `https://111movies.com/${t}/${id}` },
+  { name: 'EmbedRise',    url: (id,imdb,t,s,e) => s ? `https://embedrise.com/embed/${t}/${id}/${s}/${e}`                        : `https://embedrise.com/embed/${t}/${id}` },
+  { name: 'Vidlink',      url: (id,imdb,t,s,e) => s ? `https://vidlink.pro/${t}/${id}/${s}/${e}`                                : `https://vidlink.pro/${t}/${id}` },
+  { name: 'WarezCDN',     url: (id,imdb,t,s,e) => imdb ? (s ? `https://warezcdn.com/serie/${imdb}/${s}/${e}`                    : `https://warezcdn.com/filme/${imdb}`) : null },
+  { name: 'NontonFilm',   url: (id,imdb,t,s,e) => s ? `https://www.NontonFilm.fun/embed/tv?tmdb=${id}&season=${s}&episode=${e}` : `https://www.NontonFilm.fun/embed/movie?tmdb=${id}` },
 ];
 
 const params = new URLSearchParams(location.search);
@@ -198,6 +252,10 @@ let currentLang = 'vf';
 let itemData = null;
 let imdbId = null;
 let fallbackTimer = null;
+let currentMode = 'native'; // 'native' or 'iframe'
+let hls = null;
+let availableQualities = [];
+let nativeStreamData = null;
 
 async function tmdb(path, extra = {}) {
   const url = new URL(`https://api.themoviedb.org/3${path}`);
@@ -233,7 +291,8 @@ async function init() {
       renderSeasons(detail.seasons || []);
       await loadEpisodes(1);
     }
-    loadPlayer();
+    // Start in native HD mode by default
+    setMode('native');
   } catch(e) {
     console.error(e);
     document.getElementById('playerWrap').innerHTML = '<div class="flex items-center justify-center h-64 text-gray-500 text-sm">Impossible de charger le contenu.</div>';
@@ -313,24 +372,143 @@ function setLang(btn, lang) {
 }
 
 function onFrameLoad() {
-  document.getElementById('playerLoading').classList.add('gone');
+  if (currentMode === 'iframe') document.getElementById('playerLoading').classList.add('gone');
 }
 
+function setLoadingStatus(msg) {
+  document.getElementById('loadingStatus').textContent = msg;
+}
+
+// ---- MODE TOGGLE ----
+function setMode(mode) {
+  currentMode = mode;
+  document.getElementById('modeNative').classList.toggle('active', mode === 'native');
+  document.getElementById('modeIframe').classList.toggle('active', mode === 'iframe');
+  document.getElementById('srcTabsWrap').classList.toggle('hidden', mode !== 'iframe');
+  document.getElementById('qualityWrap').classList.toggle('hidden', mode !== 'native' || !availableQualities.length);
+
+  const frame = document.getElementById('playerFrame');
+  const video = document.getElementById('nativeVideo');
+  if (mode === 'native') {
+    frame.classList.add('hidden');
+    frame.src = 'about:blank';
+    video.classList.add('show');
+    loadNativePlayer();
+  } else {
+    video.classList.remove('show');
+    if (hls) { hls.destroy(); hls = null; }
+    video.pause(); video.src = '';
+    frame.classList.remove('hidden');
+    loadPlayer();
+  }
+}
+
+// ---- NATIVE PLAYER (HLS.js + Consumet via /api/stream) ----
+async function loadNativePlayer() {
+  const loading = document.getElementById('playerLoading');
+  loading.classList.remove('gone');
+  setLoadingStatus('Recherche du flux HD…');
+  clearTimeout(fallbackTimer);
+  document.getElementById('fallbackBanner').classList.add('hidden');
+
+  try {
+    const title = (itemData?.title || itemData?.name || '').trim();
+    const year = (itemData?.release_date || itemData?.first_air_date || '').slice(0, 4);
+    if (!title) throw new Error('No title');
+
+    const params = new URLSearchParams({ title, year, type: MEDIA_TYPE });
+    if (MEDIA_TYPE === 'tv') { params.set('season', currentSeason); params.set('episode', currentEpisode); }
+
+    const r = await fetch(`/api/stream?${params}`);
+    if (!r.ok) throw new Error(`Stream API: ${r.status}`);
+    const data = await r.json();
+    if (!data.sources?.length) throw new Error('Aucune source trouvée');
+
+    nativeStreamData = data;
+    availableQualities = data.sources.filter(s => s.url);
+    renderQualityPicker();
+
+    setLoadingStatus('Chargement de la vidéo…');
+    playStream(availableQualities[0].url);
+  } catch (e) {
+    console.warn('Native stream failed:', e.message);
+    setLoadingStatus('Lecteur natif indisponible — bascule sur iframes');
+    setTimeout(() => {
+      document.getElementById('modeIframe').click();
+    }, 1500);
+  }
+}
+
+function renderQualityPicker() {
+  const wrap = document.getElementById('qualityWrap');
+  const picker = document.getElementById('qualityPicker');
+  if (!availableQualities.length) { wrap.classList.add('hidden'); return; }
+  wrap.classList.remove('hidden');
+  picker.innerHTML = availableQualities.map((q, i) =>
+    `<button class="quality-pill ${i === 0 ? 'active' : ''}" onclick="selectQuality(this, ${i})">${q.quality || 'auto'}</button>`
+  ).join('');
+}
+
+function selectQuality(btn, idx) {
+  document.querySelectorAll('.quality-pill').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  const video = document.getElementById('nativeVideo');
+  const time = video.currentTime;
+  playStream(availableQualities[idx].url, time);
+}
+
+function playStream(url, resumeAt = 0) {
+  const video = document.getElementById('nativeVideo');
+  if (hls) { hls.destroy(); hls = null; }
+
+  const isHls = url.includes('.m3u8');
+
+  if (isHls && window.Hls?.isSupported()) {
+    hls = new Hls({ maxBufferLength: 30 });
+    hls.loadSource(url);
+    hls.attachMedia(video);
+    hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      if (resumeAt) video.currentTime = resumeAt;
+      video.play().catch(() => {});
+      document.getElementById('playerLoading').classList.add('gone');
+    });
+    hls.on(Hls.Events.ERROR, (_, data) => {
+      if (data.fatal) {
+        console.warn('HLS error', data);
+        setLoadingStatus('Flux HLS échoué — bascule sur iframes');
+        setTimeout(() => document.getElementById('modeIframe').click(), 1000);
+      }
+    });
+  } else {
+    // native HLS (Safari) or MP4
+    video.src = url;
+    video.addEventListener('loadedmetadata', () => {
+      if (resumeAt) video.currentTime = resumeAt;
+      video.play().catch(() => {});
+      document.getElementById('playerLoading').classList.add('gone');
+    }, { once: true });
+    video.addEventListener('error', () => {
+      setLoadingStatus('Vidéo échouée — bascule sur iframes');
+      setTimeout(() => document.getElementById('modeIframe').click(), 1000);
+    }, { once: true });
+  }
+}
+
+// ---- IFRAME PLAYER ----
 function loadPlayer() {
+  if (currentMode !== 'iframe') return;
   const url = buildUrl(currentSource);
   if (!url) { nextSource(); return; }
 
-  // show loading ring
   const loading = document.getElementById('playerLoading');
   loading.classList.remove('gone');
+  setLoadingStatus('Chargement du serveur…');
 
-  // hide fallback banner and reset timer
   clearTimeout(fallbackTimer);
   document.getElementById('fallbackBanner').classList.add('hidden');
 
   document.getElementById('playerFrame').src = url;
 
-  // suggest switching server after 10s if still loading
   fallbackTimer = setTimeout(() => {
     document.getElementById('playerLoading').classList.add('gone');
     document.getElementById('fallbackBanner').classList.remove('hidden');
@@ -353,7 +531,12 @@ async function selectSeason(btn, num) {
   currentSeason = num;
   currentEpisode = 1;
   await loadEpisodes(num);
-  loadPlayer();
+  reloadCurrentMode();
+}
+
+function reloadCurrentMode() {
+  if (currentMode === 'native') loadNativePlayer();
+  else loadPlayer();
 }
 
 async function loadEpisodes(season) {
@@ -376,7 +559,7 @@ function selectEpisode(el, num) {
   document.querySelectorAll('.ep-card').forEach(c => c.classList.remove('active'));
   el.classList.add('active');
   currentEpisode = num;
-  loadPlayer();
+  reloadCurrentMode();
   el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
