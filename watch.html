@@ -95,6 +95,10 @@
     /* Ad slot */
     .ad-slot { background: #0d0d0d; border: 1px dashed #333; border-radius: .5rem; padding: 1rem; text-align: center; color: #555; font-size: .7rem; min-height: 90px; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; }
 
+    /* All sources failed screen */
+    .all-failed { position: absolute; inset: 0; background: rgba(0,0,0,.95); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 12; }
+    .all-failed.hidden { display: none; }
+
     @media (max-width: 768px) {
       .ep-thumb { width: 70px; }
       .cast-card { flex: 0 0 70px; }
@@ -139,6 +143,14 @@
       <div class="fallback-banner hidden" id="fallbackBanner">
         <span>Ce serveur ne répond pas ?</span>
         <button onclick="nextSource()">Serveur suivant →</button>
+      </div>
+      <div class="all-failed hidden" id="allFailed">
+        <div class="text-center px-6">
+          <div class="text-3xl mb-2">😕</div>
+          <p class="font-bold text-white text-base mb-1">Aucune source disponible</p>
+          <p class="text-xs text-gray-400 mb-4">Les <span id="failedCount">0</span> serveurs testés n'ont pas répondu.</p>
+          <button onclick="retryAllSources()" class="bg-brand text-white font-bold px-5 py-2 rounded text-sm hover:bg-red-700">↻ Réessayer</button>
+        </div>
       </div>
     </div>
 
@@ -224,16 +236,21 @@ const IMG_BASE = 'https://image.tmdb.org/t/p/';
 
 // url(tmdbId, imdbId, type, season, episode) — return null to skip this source
 const SOURCES = [
+  { name: 'Rive',         url: (id,imdb,t,s,e) => s ? `https://rive.is/embed/${id}/${s}/${e}`                                   : `https://rive.is/embed/${id}` },
+  { name: 'VidPlay',      url: (id,imdb,t,s,e) => s ? `https://vidplay.site/e/${id}?tmdb=1&s=${s}&e=${e}`                       : `https://vidplay.site/e/${id}?tmdb=1` },
   { name: 'VidSrc',       url: (id,imdb,t,s,e) => s ? `https://vidsrc.to/embed/${t}/${id}/${s}/${e}`                            : `https://vidsrc.to/embed/${t}/${id}` },
   { name: 'VidSrc 2',     url: (id,imdb,t,s,e) => s ? `https://vidsrc.xyz/embed/${t}?tmdb=${id}&season=${s}&episode=${e}`       : `https://vidsrc.xyz/embed/${t}?tmdb=${id}` },
   { name: 'VidSrc.me',    url: (id,imdb,t,s,e) => s ? `https://vidsrc.me/embed/${t}?tmdb=${id}&season=${s}&episode=${e}`        : `https://vidsrc.me/embed/${t}?tmdb=${id}` },
   { name: 'VidSrc.cc',    url: (id,imdb,t,s,e) => s ? `https://vidsrc.cc/v2/embed/${t}/${id}/${s}/${e}?autoPlay=false`          : `https://vidsrc.cc/v2/embed/${t}/${id}?autoPlay=false` },
   { name: 'SuperEmbed',   url: (id,imdb,t,s,e) => s ? `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${s}&e=${e}`             : `https://multiembed.mov/?video_id=${id}&tmdb=1` },
   { name: 'EmbedSu',      url: (id,imdb,t,s,e) => s ? `https://embed.su/embed/${t}/${id}/${s}/${e}`                             : `https://embed.su/embed/${t}/${id}` },
-  { name: 'AutoEmbed',    url: (id,imdb,t,s,e) => s ? `https://autoembed.co/embed/${t}/${id}/${s}/${e}`                         : `https://autoembed.co/embed/${t}/${id}` },
+  { name: 'Smashy',       url: (id,imdb,t,s,e) => s ? `https://player.smashy.stream/tv/${id}?s=${s}&e=${e}`                     : `https://player.smashy.stream/movie/${id}` },
   { name: 'SmashyStream', url: (id,imdb,t,s,e) => s ? `https://embed.smashystream.com/playere.php?tmdb=${id}&season=${s}&episode=${e}` : `https://embed.smashystream.com/playere.php?tmdb=${id}` },
+  { name: 'AutoEmbed',    url: (id,imdb,t,s,e) => s ? `https://autoembed.co/embed/${t}/${id}/${s}/${e}`                         : `https://autoembed.co/embed/${t}/${id}` },
+  { name: 'AutoEmbed v2', url: (id,imdb,t,s,e) => s ? `https://autoembed.co/tv/tmdb/${id}-${s}-${e}`                            : `https://autoembed.co/movie/tmdb/${id}` },
+  { name: 'NontonGo',     url: (id,imdb,t,s,e) => s ? `https://www.nontongo.win/embed/tv/${id}/${s}/${e}`                       : `https://www.nontongo.win/embed/movie/${id}` },
   { name: '2Embed',       url: (id,imdb,t,s,e) => imdb ? (s ? `https://www.2embed.cc/embedtv/${imdb}&s=${s}&e=${e}`             : `https://www.2embed.cc/embed/${imdb}`) : null },
-  { name: 'MoviesAPI',    url: (id,imdb,t,s,e) => imdb ? (s ? `https://moviesapi.club/tv/${imdb}-${s}-${e}`                     : `https://moviesapi.club/movie/${imdb}`) : null },
+  { name: 'MoviesAPI',    url: (id,imdb,t,s,e) => s ? `https://moviesapi.club/tv/${id}-${s}-${e}`                               : `https://moviesapi.club/movie/${id}` },
   { name: '111Movies',    url: (id,imdb,t,s,e) => s ? `https://111movies.com/${t}/${id}/${s}/${e}`                              : `https://111movies.com/${t}/${id}` },
   { name: 'EmbedRise',    url: (id,imdb,t,s,e) => s ? `https://embedrise.com/embed/${t}/${id}/${s}/${e}`                        : `https://embedrise.com/embed/${t}/${id}` },
   { name: 'Vidlink',      url: (id,imdb,t,s,e) => s ? `https://vidlink.pro/${t}/${id}/${s}/${e}`                                : `https://vidlink.pro/${t}/${id}` },
@@ -256,6 +273,8 @@ let currentMode = 'native'; // 'native' or 'iframe'
 let hls = null;
 let availableQualities = [];
 let nativeStreamData = null;
+let triedSources = new Set(); // sources qui ont échoué dans le cycle courant
+let autoFallback = true; // si true, passe au suivant tout seul après timeout
 
 async function tmdb(path, extra = {}) {
   const url = new URL(`https://api.themoviedb.org/3${path}`);
@@ -349,18 +368,54 @@ function selectSource(btn, idx) {
   document.querySelectorAll('.src-tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   currentSource = idx;
+  triedSources.clear(); // user a choisi manuellement → on reset
   loadPlayer();
 }
 
 function nextSource() {
-  let next = (currentSource + 1) % SOURCES.length;
-  // skip disabled sources
-  let tries = 0;
-  while (!buildUrl(next) && tries < SOURCES.length) { next = (next + 1) % SOURCES.length; tries++; }
+  triedSources.add(currentSource);
+  console.warn(`[Player] Source ${SOURCES[currentSource].name} échouée (#${currentSource + 1}/${SOURCES.length})`);
+
+  // find next valid + non-tried source
+  let next = -1;
+  for (let i = 1; i <= SOURCES.length; i++) {
+    const idx = (currentSource + i) % SOURCES.length;
+    if (!triedSources.has(idx) && buildUrl(idx)) { next = idx; break; }
+  }
+
+  if (next === -1) {
+    // all sources tried — show failure screen
+    console.error(`[Player] Toutes les sources ont échoué (${triedSources.size}/${SOURCES.length})`);
+    showAllFailed();
+    return;
+  }
+
+  console.log(`[Player] Tentative de basculement vers ${SOURCES[next].name} (#${next + 1}/${SOURCES.length})`);
   const tabs = document.querySelectorAll('.src-tab');
   tabs.forEach(b => b.classList.remove('active'));
   if (tabs[next]) tabs[next].classList.add('active');
   currentSource = next;
+  loadPlayer();
+}
+
+function showAllFailed() {
+  clearTimeout(fallbackTimer);
+  document.getElementById('playerLoading').classList.add('gone');
+  document.getElementById('fallbackBanner').classList.add('hidden');
+  document.getElementById('failedCount').textContent = triedSources.size;
+  document.getElementById('allFailed').classList.remove('hidden');
+}
+
+function retryAllSources() {
+  console.log('[Player] Réessai de toutes les sources depuis le début');
+  triedSources.clear();
+  document.getElementById('allFailed').classList.add('hidden');
+  // back to first valid source
+  for (let i = 0; i < SOURCES.length; i++) {
+    if (buildUrl(i)) { currentSource = i; break; }
+  }
+  const tabs = document.querySelectorAll('.src-tab');
+  tabs.forEach((b, i) => b.classList.toggle('active', i === currentSource));
   loadPlayer();
 }
 
@@ -372,7 +427,11 @@ function setLang(btn, lang) {
 }
 
 function onFrameLoad() {
-  if (currentMode === 'iframe') document.getElementById('playerLoading').classList.add('gone');
+  if (currentMode !== 'iframe') return;
+  // l'iframe a chargé — on annule le timeout de fallback
+  clearTimeout(fallbackTimer);
+  document.getElementById('playerLoading').classList.add('gone');
+  console.log(`[Player] ${SOURCES[currentSource].name} a répondu`);
 }
 
 function setLoadingStatus(msg) {
@@ -382,6 +441,8 @@ function setLoadingStatus(msg) {
 // ---- MODE TOGGLE ----
 function setMode(mode) {
   currentMode = mode;
+  triedSources.clear();
+  document.getElementById('allFailed').classList.add('hidden');
   document.getElementById('modeNative').classList.toggle('active', mode === 'native');
   document.getElementById('modeIframe').classList.toggle('active', mode === 'iframe');
   document.getElementById('srcTabsWrap').classList.toggle('hidden', mode !== 'iframe');
@@ -500,18 +561,28 @@ function loadPlayer() {
   const url = buildUrl(currentSource);
   if (!url) { nextSource(); return; }
 
+  const srcName = SOURCES[currentSource].name;
+  console.log(`[Player] Chargement de ${srcName} (#${currentSource + 1}/${SOURCES.length}) → ${url}`);
+
   const loading = document.getElementById('playerLoading');
   loading.classList.remove('gone');
-  setLoadingStatus('Chargement du serveur…');
+  setLoadingStatus(`Chargement de ${srcName}…`);
 
   clearTimeout(fallbackTimer);
   document.getElementById('fallbackBanner').classList.add('hidden');
+  document.getElementById('allFailed').classList.add('hidden');
 
   document.getElementById('playerFrame').src = url;
 
+  // 10s timeout — auto-bascule sur le suivant si rien n'a chargé
   fallbackTimer = setTimeout(() => {
     document.getElementById('playerLoading').classList.add('gone');
-    document.getElementById('fallbackBanner').classList.remove('hidden');
+    if (autoFallback) {
+      console.warn(`[Player] Timeout 10s pour ${srcName} — bascule auto`);
+      nextSource();
+    } else {
+      document.getElementById('fallbackBanner').classList.remove('hidden');
+    }
   }, 10000);
 }
 
