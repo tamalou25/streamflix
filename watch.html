@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="fr" data-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Lecteur – StreamFlix</title>
+  <meta name="theme-color" content="#e50914"/>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎬</text></svg>"/>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { colors: { brand: '#e50914' }, fontFamily: { sans: ['Inter','system-ui','sans-serif'] } } }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <style>
+    * { box-sizing: border-box; }
+    body { background: #0a0a0a; color: #fff; font-family: 'Inter', sans-serif; margin: 0; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #111; }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 99px; }
+
+    /* Player */
+    .player-wrap { position: relative; width: 100%; background: #000; }
+    .player-wrap iframe { width: 100%; aspect-ratio: 16/9; display: block; border: none; }
+    .player-overlay { position: absolute; inset: 0; pointer-events: none; }
+
+    /* Source tabs */
+    .src-tab { background: #1a1a1a; border: 1.5px solid #333; color: #aaa; padding: .4rem 1rem; border-radius: .4rem; cursor: pointer; font-size: .8rem; font-weight: 600; transition: all .18s; white-space: nowrap; }
+    .src-tab:hover { border-color: #e50914; color: #fff; }
+    .src-tab.active { background: #e50914; border-color: #e50914; color: #fff; }
+
+    /* Lang tabs */
+    .lang-tab { background: #1a1a1a; border: 1.5px solid #333; color: #aaa; padding: .35rem .9rem; border-radius: 2rem; cursor: pointer; font-size: .75rem; font-weight: 700; transition: all .18s; }
+    .lang-tab:hover { border-color: #666; color: #fff; }
+    .lang-tab.active { border-color: #46d369; color: #46d369; background: rgba(70,211,105,.08); }
+
+    /* Season/episode tabs */
+    .season-btn { background: #1a1a1a; border: 1.5px solid #333; color: #aaa; padding: .35rem .9rem; border-radius: .4rem; cursor: pointer; font-size: .78rem; font-weight: 600; transition: all .18s; }
+    .season-btn:hover { border-color: #555; color: #fff; }
+    .season-btn.active { background: #e50914; border-color: #e50914; color: #fff; }
+    .ep-card { background: #1a1a1a; border: 1.5px solid #222; border-radius: .5rem; overflow: hidden; cursor: pointer; transition: all .2s; display: flex; gap: .75rem; align-items: center; padding: .6rem; }
+    .ep-card:hover { border-color: #e50914; background: #222; }
+    .ep-card.active { border-color: #e50914; background: rgba(229,9,20,.08); }
+    .ep-thumb { width: 100px; aspect-ratio: 16/9; object-fit: cover; border-radius: .25rem; background: #333; flex-shrink: 0; }
+
+    /* Cast card */
+    .cast-card { text-align: center; flex: 0 0 90px; }
+    .cast-card img { width: 70px; height: 70px; object-fit: cover; border-radius: 50%; background: #333; margin: 0 auto .4rem; }
+
+    /* Skeleton */
+    .skeleton { background: linear-gradient(90deg, #1a1a1a 25%, #222 50%, #1a1a1a 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; border-radius: .25rem; }
+    @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+    /* Similar row */
+    .sim-card { flex: 0 0 140px; cursor: pointer; }
+    .sim-card img { width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: .4rem; background: #333; }
+    .sim-card:hover img { opacity: .8; }
+
+    /* Notification bar */
+    .notif { background: linear-gradient(90deg, #1a1a2e, #16213e); border-bottom: 1px solid #333; padding: .6rem 4%; font-size: .78rem; color: #aaa; display: flex; align-items: center; gap: .5rem; }
+
+    @media (max-width: 768px) {
+      .ep-thumb { width: 70px; }
+      .cast-card { flex: 0 0 70px; }
+      .cast-card img { width: 52px; height: 52px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- NOTIF BAR -->
+<div class="notif">
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#e50914" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  Si le lecteur ne charge pas, essayez un autre serveur ou désactivez votre bloqueur de publicités.
+</div>
+
+<!-- NAVBAR -->
+<nav class="sticky top-0 z-50 bg-[#0a0a0a] border-b border-gray-800 px-[4%] h-14 flex items-center gap-4">
+  <a href="/" class="flex items-center gap-1 shrink-0 mr-4">
+    <span class="text-brand font-black text-xl tracking-tight">STREAM</span><span class="font-black text-xl tracking-tight">FLIX</span>
+  </a>
+  <div class="flex items-center gap-2 text-sm text-gray-300 min-w-0">
+    <a href="/" class="hover:text-white shrink-0">Accueil</a>
+    <span class="text-gray-600">/</span>
+    <span id="breadcrumb" class="text-white truncate font-medium"></span>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<div class="max-w-screen-2xl mx-auto px-[2%] py-4 lg:flex gap-6">
+
+  <!-- LEFT: player + infos -->
+  <div class="flex-1 min-w-0">
+
+    <!-- Player -->
+    <div class="player-wrap rounded-lg overflow-hidden mb-4" id="playerWrap">
+      <iframe id="playerFrame" allowfullscreen allow="autoplay; fullscreen" src="about:blank"></iframe>
+    </div>
+
+    <!-- Source selectors -->
+    <div class="bg-[#111] rounded-lg p-4 mb-4">
+      <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <p class="text-sm font-bold text-gray-300">🎬 Serveurs vidéo</p>
+        <div class="flex gap-2" id="langTabs">
+          <button class="lang-tab active" onclick="setLang(this,'vf')">VF</button>
+          <button class="lang-tab" onclick="setLang(this,'vostfr')">VOSTFR</button>
+          <button class="lang-tab" onclick="setLang(this,'vo')">VO</button>
+        </div>
+      </div>
+      <div class="flex flex-wrap gap-2" id="srcTabs"></div>
+    </div>
+
+    <!-- Season/Episodes (TV only) -->
+    <div id="tvSection" class="hidden bg-[#111] rounded-lg p-4 mb-4">
+      <div class="flex items-center gap-3 mb-3 flex-wrap">
+        <p class="text-sm font-bold text-gray-300">📺 Saisons</p>
+        <div class="flex gap-2 flex-wrap" id="seasonBtns"></div>
+      </div>
+      <div class="space-y-2 max-h-96 overflow-y-auto pr-1" id="episodeList"></div>
+    </div>
+
+    <!-- Infos -->
+    <div class="bg-[#111] rounded-lg p-5 mb-4" id="infoSection">
+      <div class="flex gap-5">
+        <img id="detailPoster" class="w-28 md:w-36 rounded-lg shrink-0 object-cover bg-gray-800" src="" alt=""/>
+        <div class="flex-1 min-w-0">
+          <h1 id="detailTitle" class="text-xl md:text-2xl font-black mb-1"></h1>
+          <p id="detailTagline" class="text-gray-400 text-sm italic mb-3"></p>
+          <div class="flex flex-wrap gap-2 mb-3" id="detailBadges"></div>
+          <p id="detailOverview" class="text-sm text-gray-300 leading-relaxed line-clamp-4 mb-3"></p>
+          <div class="text-sm text-gray-400 space-y-1" id="detailMeta"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cast -->
+    <div class="bg-[#111] rounded-lg p-4 mb-4" id="castSection">
+      <p class="text-sm font-bold text-gray-300 mb-3">👥 Casting</p>
+      <div class="flex gap-3 overflow-x-auto pb-2" id="castList"></div>
+    </div>
+
+  </div>
+
+  <!-- RIGHT: similar -->
+  <div class="lg:w-72 shrink-0">
+    <p class="text-sm font-bold text-gray-300 mb-3">📽 Similaires</p>
+    <div class="space-y-3" id="similarList"></div>
+  </div>
+
+</div>
+
+<script>
+const TMDB_KEY = 'YOUR_TMDB_API_KEY';
+const IMG_BASE = 'https://image.tmdb.org/t/p/';
+
+const SOURCES = [
+  { name: 'VidSrc',    vf: (id,t,s,e) => s ? `https://vidsrc.to/embed/${t}/${id}/${s}/${e}` : `https://vidsrc.to/embed/${t}/${id}` },
+  { name: 'VidSrc 2',  vf: (id,t,s,e) => s ? `https://vidsrc.xyz/embed/${t}?tmdb=${id}&season=${s}&episode=${e}` : `https://vidsrc.xyz/embed/${t}?tmdb=${id}` },
+  { name: 'SuperEmbed',vf: (id,t,s,e) => s ? `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${s}&e=${e}` : `https://multiembed.mov/?video_id=${id}&tmdb=1` },
+  { name: 'EmbedSu',   vf: (id,t,s,e) => s ? `https://embed.su/embed/${t}/${id}/${s}/${e}` : `https://embed.su/embed/${t}/${id}` },
+  { name: 'AutoEmbed', vf: (id,t,s,e) => s ? `https://autoembed.co/embed/${t}/${id}/${s}/${e}` : `https://autoembed.co/embed/${t}/${id}` },
+];
+
+const params = new URLSearchParams(location.search);
+const MEDIA_ID = params.get('id');
+const MEDIA_TYPE = params.get('type') || 'movie';
+
+let currentSeason = 1;
+let currentEpisode = 1;
+let currentSource = 0;
+let currentLang = 'vf';
+let itemData = null;
+
+async function tmdb(path, extra = {}) {
+  const url = new URL(`https://api.themoviedb.org/3${path}`);
+  url.searchParams.set('api_key', TMDB_KEY);
+  url.searchParams.set('language', 'fr-FR');
+  for (const [k, v] of Object.entries(extra)) url.searchParams.set(k, v);
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(r.status);
+  return r.json();
+}
+
+function img(path, size = 'w342') {
+  return path ? `${IMG_BASE}${size}${path}` : '';
+}
+
+// ---- Load page ----
+async function init() {
+  if (!MEDIA_ID) { location.href = '/'; return; }
+  try {
+    const [detail, credits, similar] = await Promise.all([
+      tmdb(`/${MEDIA_TYPE}/${MEDIA_ID}`, { append_to_response: 'external_ids' }),
+      tmdb(`/${MEDIA_TYPE}/${MEDIA_ID}/credits`),
+      tmdb(`/${MEDIA_TYPE}/${MEDIA_ID}/similar`),
+    ]);
+    itemData = detail;
+    renderInfo(detail);
+    renderSources();
+    renderCast(credits.cast || []);
+    renderSimilar(similar.results || []);
+    if (MEDIA_TYPE === 'tv') {
+      document.getElementById('tvSection').classList.remove('hidden');
+      renderSeasons(detail.seasons || []);
+      await loadEpisodes(1);
+    }
+    loadPlayer();
+  } catch(e) {
+    console.error(e);
+    document.getElementById('playerWrap').innerHTML = '<div class="flex items-center justify-center h-64 text-gray-500 text-sm">Impossible de charger le contenu.</div>';
+  }
+}
+
+function renderInfo(d) {
+  const title = d.title || d.name;
+  document.title = `${title} – StreamFlix`;
+  document.getElementById('breadcrumb').textContent = title;
+  document.getElementById('detailTitle').textContent = title;
+  document.getElementById('detailTagline').textContent = d.tagline || '';
+  document.getElementById('detailOverview').textContent = d.overview || 'Pas de description disponible.';
+  document.getElementById('detailPoster').src = img(d.poster_path, 'w342');
+
+  const year = (d.release_date || d.first_air_date || '').slice(0, 4);
+  const runtime = d.runtime ? `${d.runtime} min` : (d.episode_run_time?.[0] ? `~${d.episode_run_time[0]} min/ép.` : '');
+  const rating = d.vote_average?.toFixed(1);
+
+  document.getElementById('detailBadges').innerHTML = `
+    <span class="text-xs px-2 py-1 rounded bg-white/10">${year}</span>
+    ${runtime ? `<span class="text-xs px-2 py-1 rounded bg-white/10">${runtime}</span>` : ''}
+    <span class="text-xs px-2 py-1 rounded font-bold" style="background:#46d369;color:#000">HD</span>
+    <span class="text-xs px-2 py-1 rounded" style="background:#e50914">VF / VOSTFR</span>
+    <span class="text-xs px-2 py-1 rounded bg-yellow-500/20 text-yellow-400">⭐ ${rating}</span>
+  `;
+
+  document.getElementById('detailMeta').innerHTML = `
+    <p><span class="text-gray-500">Genres :</span> ${(d.genres || []).map(g => g.name).join(', ')}</p>
+    ${d.status ? `<p><span class="text-gray-500">Statut :</span> ${d.status}</p>` : ''}
+    ${d.vote_count ? `<p><span class="text-gray-500">Votes :</span> ${d.vote_count.toLocaleString()}</p>` : ''}
+    ${MEDIA_TYPE === 'tv' && d.number_of_seasons ? `<p><span class="text-gray-500">Saisons :</span> ${d.number_of_seasons}</p>` : ''}
+  `;
+}
+
+function renderSources() {
+  const tabs = document.getElementById('srcTabs');
+  tabs.innerHTML = SOURCES.map((s, i) => `
+    <button class="src-tab ${i === 0 ? 'active' : ''}" onclick="selectSource(this, ${i})">${s.name}</button>
+  `).join('');
+}
+
+function selectSource(btn, idx) {
+  document.querySelectorAll('.src-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentSource = idx;
+  loadPlayer();
+}
+
+function setLang(btn, lang) {
+  document.querySelectorAll('.lang-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentLang = lang;
+  loadPlayer();
+}
+
+function loadPlayer() {
+  const src = SOURCES[currentSource];
+  let url;
+  if (MEDIA_TYPE === 'tv') {
+    url = src.vf(MEDIA_ID, MEDIA_TYPE, currentSeason, currentEpisode);
+  } else {
+    url = src.vf(MEDIA_ID, MEDIA_TYPE);
+  }
+  document.getElementById('playerFrame').src = url;
+}
+
+// ---- TV ----
+function renderSeasons(seasons) {
+  const valid = seasons.filter(s => s.season_number > 0);
+  document.getElementById('seasonBtns').innerHTML = valid.map(s => `
+    <button class="season-btn ${s.season_number === 1 ? 'active' : ''}" onclick="selectSeason(this, ${s.season_number})">
+      S${s.season_number}
+    </button>
+  `).join('');
+}
+
+async function selectSeason(btn, num) {
+  document.querySelectorAll('.season-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  currentSeason = num;
+  currentEpisode = 1;
+  await loadEpisodes(num);
+  loadPlayer();
+}
+
+async function loadEpisodes(season) {
+  try {
+    const data = await tmdb(`/tv/${MEDIA_ID}/season/${season}`);
+    const list = document.getElementById('episodeList');
+    list.innerHTML = (data.episodes || []).map(ep => `
+      <div class="ep-card ${ep.episode_number === 1 ? 'active' : ''}" onclick="selectEpisode(this, ${ep.episode_number})">
+        <img class="ep-thumb" src="${ep.still_path ? `${IMG_BASE}w300${ep.still_path}` : ''}" alt="Ep ${ep.episode_number}" onerror="this.style.display='none'"/>
+        <div class="min-w-0">
+          <p class="text-xs font-bold text-white mb-0.5">Épisode ${ep.episode_number}${ep.name ? ` — ${ep.name}` : ''}</p>
+          <p class="text-xs text-gray-500 line-clamp-2">${ep.overview || ''}</p>
+        </div>
+      </div>
+    `).join('');
+  } catch(e) { console.warn('Episodes load failed', e); }
+}
+
+function selectEpisode(el, num) {
+  document.querySelectorAll('.ep-card').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  currentEpisode = num;
+  loadPlayer();
+  el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ---- CAST ----
+function renderCast(cast) {
+  const top = cast.slice(0, 20);
+  document.getElementById('castList').innerHTML = top.map(p => `
+    <div class="cast-card">
+      <img src="${p.profile_path ? `${IMG_BASE}w185${p.profile_path}` : 'data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2270%22 height=%2270%22><rect width=%2270%22 height=%2270%22 fill=%22%23333%22/><text x=%2235%22 y=%2242%22 text-anchor=%22middle%22 font-size=%2228%22>👤</text></svg>'}" alt="${p.name}" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2270%22 height=%2270%22><rect fill=%22%23333%22 width=%2270%22 height=%2270%22/></svg>'"/>
+      <p class="text-xs font-semibold text-white truncate">${p.name}</p>
+      <p class="text-xs text-gray-500 truncate">${p.character || ''}</p>
+    </div>
+  `).join('');
+}
+
+// ---- SIMILAR ----
+function renderSimilar(items) {
+  const valid = items.filter(x => x.poster_path).slice(0, 12);
+  document.getElementById('similarList').innerHTML = valid.map(item => {
+    const title = item.title || item.name;
+    const year = (item.release_date || item.first_air_date || '').slice(0, 4);
+    return `
+      <a href="watch.html?id=${item.id}&type=${MEDIA_TYPE}" class="flex gap-3 items-center bg-[#1a1a1a] rounded-lg p-2 hover:bg-[#222] transition-colors cursor-pointer">
+        <img src="${IMG_BASE}w185${item.poster_path}" alt="${title}" class="w-16 aspect-[2/3] object-cover rounded shrink-0 bg-gray-800"/>
+        <div class="min-w-0">
+          <p class="text-sm font-semibold text-white truncate">${title}</p>
+          <p class="text-xs text-gray-500">${year} · ⭐ ${item.vote_average?.toFixed(1)}</p>
+        </div>
+      </a>
+    `;
+  }).join('');
+}
+
+init();
+</script>
+</body>
+</html>
