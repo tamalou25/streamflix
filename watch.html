@@ -61,6 +61,19 @@
     /* Notification bar */
     .notif { background: linear-gradient(90deg, #1a1a2e, #16213e); border-bottom: 1px solid #333; padding: .6rem 4%; font-size: .78rem; color: #aaa; display: flex; align-items: center; gap: .5rem; }
 
+    /* Fallback banner */
+    .fallback-banner { position: absolute; bottom: 1rem; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.88); backdrop-filter: blur(10px); border: 1px solid #444; border-radius: .5rem; padding: .55rem 1.1rem; display: flex; align-items: center; gap: .9rem; font-size: .78rem; color: #ccc; z-index: 10; white-space: nowrap; animation: fbIn .3s ease; pointer-events: all; }
+    .fallback-banner.hidden { display: none; }
+    .fallback-banner button { background: #e50914; color: #fff; border: none; padding: .28rem .75rem; border-radius: .3rem; cursor: pointer; font-size: .73rem; font-weight: 700; }
+    .fallback-banner button:hover { background: #c80812; }
+    @keyframes fbIn { from { opacity:0; transform:translateX(-50%) translateY(8px); } to { opacity:1; transform:translateX(-50%) translateY(0); } }
+
+    /* Player loading ring */
+    .player-loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #000; pointer-events: none; opacity: 1; transition: opacity .4s; z-index: 5; }
+    .player-loading.gone { opacity: 0; pointer-events: none; }
+    .spin { width: 36px; height: 36px; border: 3px solid #333; border-top-color: #e50914; border-radius: 50%; animation: spin .7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     @media (max-width: 768px) {
       .ep-thumb { width: 70px; }
       .cast-card { flex: 0 0 70px; }
@@ -95,8 +108,13 @@
   <div class="flex-1 min-w-0">
 
     <!-- Player -->
-    <div class="player-wrap rounded-lg overflow-hidden mb-4" id="playerWrap">
-      <iframe id="playerFrame" allowfullscreen allow="autoplay; fullscreen" src="about:blank"></iframe>
+    <div class="player-wrap rounded-lg overflow-hidden mb-4 relative" id="playerWrap">
+      <div class="player-loading" id="playerLoading"><div class="spin"></div></div>
+      <iframe id="playerFrame" allowfullscreen allow="autoplay; fullscreen" src="about:blank" onload="onFrameLoad()"></iframe>
+      <div class="fallback-banner hidden" id="fallbackBanner">
+        <span>Ce serveur ne répond pas ?</span>
+        <button onclick="nextSource()">Serveur suivant →</button>
+      </div>
     </div>
 
     <!-- Source selectors -->
@@ -155,12 +173,18 @@
 const TMDB_KEY = 'YOUR_TMDB_API_KEY';
 const IMG_BASE = 'https://image.tmdb.org/t/p/';
 
+// url(tmdbId, imdbId, type, season, episode) — return null to skip this source
 const SOURCES = [
-  { name: 'VidSrc',    vf: (id,t,s,e) => s ? `https://vidsrc.to/embed/${t}/${id}/${s}/${e}` : `https://vidsrc.to/embed/${t}/${id}` },
-  { name: 'VidSrc 2',  vf: (id,t,s,e) => s ? `https://vidsrc.xyz/embed/${t}?tmdb=${id}&season=${s}&episode=${e}` : `https://vidsrc.xyz/embed/${t}?tmdb=${id}` },
-  { name: 'SuperEmbed',vf: (id,t,s,e) => s ? `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${s}&e=${e}` : `https://multiembed.mov/?video_id=${id}&tmdb=1` },
-  { name: 'EmbedSu',   vf: (id,t,s,e) => s ? `https://embed.su/embed/${t}/${id}/${s}/${e}` : `https://embed.su/embed/${t}/${id}` },
-  { name: 'AutoEmbed', vf: (id,t,s,e) => s ? `https://autoembed.co/embed/${t}/${id}/${s}/${e}` : `https://autoembed.co/embed/${t}/${id}` },
+  { name: 'VidSrc',      url: (id,imdb,t,s,e) => s ? `https://vidsrc.to/embed/${t}/${id}/${s}/${e}`                            : `https://vidsrc.to/embed/${t}/${id}` },
+  { name: 'VidSrc 2',    url: (id,imdb,t,s,e) => s ? `https://vidsrc.xyz/embed/${t}?tmdb=${id}&season=${s}&episode=${e}`       : `https://vidsrc.xyz/embed/${t}?tmdb=${id}` },
+  { name: 'VidSrc.me',   url: (id,imdb,t,s,e) => s ? `https://vidsrc.me/embed/${t}?tmdb=${id}&season=${s}&episode=${e}`        : `https://vidsrc.me/embed/${t}?tmdb=${id}` },
+  { name: 'SuperEmbed',  url: (id,imdb,t,s,e) => s ? `https://multiembed.mov/?video_id=${id}&tmdb=1&s=${s}&e=${e}`             : `https://multiembed.mov/?video_id=${id}&tmdb=1` },
+  { name: 'EmbedSu',     url: (id,imdb,t,s,e) => s ? `https://embed.su/embed/${t}/${id}/${s}/${e}`                             : `https://embed.su/embed/${t}/${id}` },
+  { name: 'AutoEmbed',   url: (id,imdb,t,s,e) => s ? `https://autoembed.co/embed/${t}/${id}/${s}/${e}`                         : `https://autoembed.co/embed/${t}/${id}` },
+  { name: 'SmashyStream',url: (id,imdb,t,s,e) => s ? `https://embed.smashystream.com/playere.php?tmdb=${id}&season=${s}&episode=${e}` : `https://embed.smashystream.com/playere.php?tmdb=${id}` },
+  { name: '2Embed',      url: (id,imdb,t,s,e) => imdb ? (s ? `https://www.2embed.cc/embedtv/${imdb}&s=${s}&e=${e}`             : `https://www.2embed.cc/embed/${imdb}`) : null },
+  { name: 'MoviesAPI',   url: (id,imdb,t,s,e) => imdb ? (s ? `https://moviesapi.club/tv/${imdb}-${s}-${e}`                     : `https://moviesapi.club/movie/${imdb}`) : null },
+  { name: 'NontonFilm',  url: (id,imdb,t,s,e) => s ? `https://www.NontonFilm.fun/embed/tv?tmdb=${id}&season=${s}&episode=${e}` : `https://www.NontonFilm.fun/embed/movie?tmdb=${id}` },
 ];
 
 const params = new URLSearchParams(location.search);
@@ -172,6 +196,8 @@ let currentEpisode = 1;
 let currentSource = 0;
 let currentLang = 'vf';
 let itemData = null;
+let imdbId = null;
+let fallbackTimer = null;
 
 async function tmdb(path, extra = {}) {
   const url = new URL(`https://api.themoviedb.org/3${path}`);
@@ -197,6 +223,7 @@ async function init() {
       tmdb(`/${MEDIA_TYPE}/${MEDIA_ID}/similar`),
     ]);
     itemData = detail;
+    imdbId = detail.external_ids?.imdb_id || null;
     renderInfo(detail);
     renderSources();
     renderCast(credits.cast || []);
@@ -244,15 +271,37 @@ function renderInfo(d) {
 
 function renderSources() {
   const tabs = document.getElementById('srcTabs');
-  tabs.innerHTML = SOURCES.map((s, i) => `
-    <button class="src-tab ${i === 0 ? 'active' : ''}" onclick="selectSource(this, ${i})">${s.name}</button>
-  `).join('');
+  tabs.innerHTML = SOURCES.map((s, i) => {
+    const disabled = !buildUrl(i);
+    return `<button class="src-tab ${i === 0 ? 'active' : ''} ${disabled ? 'opacity-40 cursor-not-allowed' : ''}"
+      onclick="${disabled ? '' : `selectSource(this, ${i})`}"
+      title="${disabled ? 'Nécessite un ID IMDB non disponible' : s.name}">${s.name}</button>`;
+  }).join('');
+}
+
+function buildUrl(idx) {
+  const src = SOURCES[idx];
+  const s = MEDIA_TYPE === 'tv' ? currentSeason : null;
+  const e = MEDIA_TYPE === 'tv' ? currentEpisode : null;
+  return src.url(MEDIA_ID, imdbId, MEDIA_TYPE, s, e);
 }
 
 function selectSource(btn, idx) {
   document.querySelectorAll('.src-tab').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
   currentSource = idx;
+  loadPlayer();
+}
+
+function nextSource() {
+  let next = (currentSource + 1) % SOURCES.length;
+  // skip disabled sources
+  let tries = 0;
+  while (!buildUrl(next) && tries < SOURCES.length) { next = (next + 1) % SOURCES.length; tries++; }
+  const tabs = document.querySelectorAll('.src-tab');
+  tabs.forEach(b => b.classList.remove('active'));
+  if (tabs[next]) tabs[next].classList.add('active');
+  currentSource = next;
   loadPlayer();
 }
 
@@ -263,15 +312,29 @@ function setLang(btn, lang) {
   loadPlayer();
 }
 
+function onFrameLoad() {
+  document.getElementById('playerLoading').classList.add('gone');
+}
+
 function loadPlayer() {
-  const src = SOURCES[currentSource];
-  let url;
-  if (MEDIA_TYPE === 'tv') {
-    url = src.vf(MEDIA_ID, MEDIA_TYPE, currentSeason, currentEpisode);
-  } else {
-    url = src.vf(MEDIA_ID, MEDIA_TYPE);
-  }
+  const url = buildUrl(currentSource);
+  if (!url) { nextSource(); return; }
+
+  // show loading ring
+  const loading = document.getElementById('playerLoading');
+  loading.classList.remove('gone');
+
+  // hide fallback banner and reset timer
+  clearTimeout(fallbackTimer);
+  document.getElementById('fallbackBanner').classList.add('hidden');
+
   document.getElementById('playerFrame').src = url;
+
+  // suggest switching server after 10s if still loading
+  fallbackTimer = setTimeout(() => {
+    document.getElementById('playerLoading').classList.add('gone');
+    document.getElementById('fallbackBanner').classList.remove('hidden');
+  }, 10000);
 }
 
 // ---- TV ----
